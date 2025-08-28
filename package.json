@@ -1,0 +1,36 @@
+{
+  "name": "freshbooks-time-checker",
+  "version": "1.0.0",
+  "description": "FreshBooks time tracking checker with Node.js and TypeScript",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "check-time": "npm run build && npm start",
+    "report": "npm run dev"
+  },
+  "keywords": [
+    "freshbooks",
+    "time-tracking",
+    "typescript",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.5.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  }
+}
