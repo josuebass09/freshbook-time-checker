@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import * as fs from 'fs-extra';
-import * as path from 'path';
-import { config, validateConfig } from './config';
+import { validateConfig } from './config';
 import { FreshBooksAPI } from './freshbooks-api';
 import { TokenManager } from './token-manager';
 import { ReportGenerator } from './report-generator';
-import { FBTeamMember, ReportOptions } from './types';
+import { ReportOptions } from './types';
 
 const program = new Command();
 
