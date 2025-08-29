@@ -68,7 +68,7 @@ program
       console.log('🔍 Fetching team members from FreshBooks API...');
       const teamMembersResponse = await api.fetchTeamMembers();
       const teamMembers = teamMembersResponse.users;
-      console.log(`✅ Found ${teamMembers.length} team members`);
+      console.log(`👥 Found ${teamMembers.length} active team members`);
 
       const reportOptions: ReportOptions = {
         startDate,

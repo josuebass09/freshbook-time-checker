@@ -82,6 +82,9 @@ export class FreshBooksAPI {
 
     try {
       const teamResponse = await axios.get<FBTeamMembersAPIResponse>(url, {
+        params: {
+          active: true
+        },
         headers: {
           'Authorization': `Bearer ${this.accessToken}`,
           'Content-Type': 'application/json'
