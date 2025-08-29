@@ -46,7 +46,7 @@ export class ReportGenerator {
 
       try {
         const endDate = this.options.range ? this.options.endDate : this.options.startDate;
-        
+
         if (!member.identity_id) {
           console.log(`⚠️  Skipping ${member.first_name} ${member.last_name} - no identity_id`);
           continue;
@@ -128,7 +128,7 @@ export class ReportGenerator {
   private showBottomProgress(current: number, total: number): void {
     const percentage = Math.floor((current * 100) / total);
     // Simple progress display on same line, then newline
-    console.log(`Progress: ${current}/${total} (${percentage}%)`);
+    console.log(`Progress: (${percentage}%)`);
   }
 
   private showProgress(current: number, total: number): void {
