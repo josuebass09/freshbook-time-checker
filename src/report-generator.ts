@@ -1,5 +1,6 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import puppeteer from 'puppeteer';
 import { FBTeamMember, ReportOptions } from './types';
 import { FreshBooksAPI } from './freshbooks-api';
 import {
@@ -40,6 +41,7 @@ export class ReportGenerator {
     }> = [];
 
     let totalHoursSum = 0;
+    let processedCount = 0;
 
     for (let i = 0; i < this.teamMembers.length; i++) {
       const member = this.teamMembers[i];
@@ -51,6 +53,8 @@ export class ReportGenerator {
           console.log(`⚠️  Skipping ${member.first_name} ${member.last_name} - no identity_id`);
           continue;
         }
+
+        processedCount++;
 
         const response = await this.api.fetchTimeEntries(member.identity_id.toString(), this.options.startDate, endDate);
 
@@ -68,7 +72,7 @@ export class ReportGenerator {
         });
 
         this.displayMemberResult(member, totalLoggedHours, note, oooStatus, totalExpectedHours);
-        this.showBottomProgress(i + 1, this.teamMembers.length);
+        this.showBottomProgress(processedCount, this.teamMembers.length);
 
       } catch (error) {
         console.error(`  👤 ${member.first_name} ${member.last_name} .................. ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -82,8 +86,17 @@ export class ReportGenerator {
       }
     }
 
-    this.showProgress(this.teamMembers.length, this.teamMembers.length);
+    this.showProgress(processedCount, this.teamMembers.length);
     console.log('\n✅ Report generation completed successfully!\n');
+
+    // Show member breakdown summary
+    const skippedCount = this.teamMembers.length - processedCount;
+    console.log(`📊 Member Summary:`);
+    console.log(`   • ${processedCount} members with identity_id processed`);
+    if (skippedCount > 0) {
+      console.log(`   • ${skippedCount} members skipped (no identity_id)`);
+    }
+    console.log(`   • ${this.teamMembers.length} total members found\n`);
 
     if (this.options.range) {
       console.log(`Minimum Expected Hours: ${totalExpectedHours}`);
@@ -137,6 +150,27 @@ export class ReportGenerator {
     }
   }
 
+  private groupResults(results: Array<{ member: FBTeamMember; hours: number; note: string; oooStatus: boolean }>) {
+    const workedHours: typeof results = [];
+    const ooo: typeof results = [];
+    const other: typeof results = [];
+
+    for (const result of results) {
+      if (result.hours > 0) {
+        workedHours.push(result);
+      } else if (result.oooStatus || result.note.toLowerCase().includes('ooo') ||
+                 result.note.toLowerCase().includes('out of office') ||
+                 result.note.toLowerCase().includes('vacation') ||
+                 result.note.toLowerCase().includes('sick')) {
+        ooo.push(result);
+      } else {
+        other.push(result);
+      }
+    }
+
+    return { workedHours, ooo, other };
+  }
+
   private async generateOutputFiles(
     results: Array<{ member: FBTeamMember; hours: number; note: string; oooStatus: boolean }>,
     totalHours: number,
@@ -150,7 +184,7 @@ export class ReportGenerator {
     }
 
     if (this.options.outputFormats.includes('html')) {
-      await this.generateHTML(results, totalHours, countOfDays, totalExpectedHours, dateStr);
+      await this.generatePDF(results, totalHours, countOfDays, totalExpectedHours, dateStr);
     }
   }
 
@@ -175,39 +209,68 @@ export class ReportGenerator {
     console.log(`📄 CSV Report saved to: ${filename}`);
   }
 
-  private async generateHTML(
+  private async generatePDF(
     results: Array<{ member: FBTeamMember; hours: number; note: string; oooStatus: boolean }>,
     totalHours: number,
     countOfDays: number,
     totalExpectedHours: number,
     dateStr: string
   ): Promise<void> {
-    const filename = `freshbooks-time-report-${dateStr}.html`;
+    const filename = `freshbooks-time-report-${dateStr}.pdf`;
     const title = this.options.range
       ? `FreshBooks Time Report - ${this.options.startDate} to ${this.options.endDate}`
       : `FreshBooks Time Report - ${this.options.startDate}`;
 
     const htmlContent = this.generateHTMLContent(results, totalHours, countOfDays, totalExpectedHours, title);
 
-    await fs.writeFile(filename, htmlContent);
-    console.log(`HTML Report saved to: ${filename}`);
-
-    // Try to open in browser
-    const fullPath = path.resolve(filename);
-    console.log(`HTML Report URL: file://${fullPath}`);
-
     try {
-      const { exec } = require('child_process');
-      if (process.platform === 'darwin') {
-        exec(`open "${fullPath}"`);
-      } else if (process.platform === 'win32') {
-        exec(`start "${fullPath}"`);
-      } else {
-        exec(`xdg-open "${fullPath}"`);
+      console.log('🔄 Generating PDF...');
+      const browser = await puppeteer.launch({ headless: true });
+      const page = await browser.newPage();
+
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+
+      const pdf = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '20mm',
+          right: '15mm',
+          bottom: '20mm',
+          left: '15mm'
+        }
+      });
+
+      await browser.close();
+      await fs.writeFile(filename, pdf);
+
+      console.log(`PDF Report saved to: ${filename}`);
+
+      // Try to open in browser/default PDF viewer
+      const fullPath = path.resolve(filename);
+      console.log(`PDF Report path: ${fullPath}`);
+
+      try {
+        const { exec } = require('child_process');
+        if (process.platform === 'darwin') {
+          exec(`open "${fullPath}"`);
+        } else if (process.platform === 'win32') {
+          exec(`start "${fullPath}"`);
+        } else {
+          exec(`xdg-open "${fullPath}"`);
+        }
+        console.log('Opening PDF report...');
+      } catch (error) {
+        console.log('Could not auto-open PDF. Please manually open the file.');
       }
-      console.log('Opening HTML report in browser...');
     } catch (error) {
-      console.log('Could not auto-open browser. Please manually open the file.');
+      console.error('❌ Error generating PDF:', error instanceof Error ? error.message : 'Unknown error');
+      console.log('Falling back to HTML generation...');
+
+      // Fallback to HTML if PDF generation fails
+      const htmlFilename = `freshbooks-time-report-${dateStr}.html`;
+      await fs.writeFile(htmlFilename, htmlContent);
+      console.log(`HTML Report saved to: ${htmlFilename}`);
     }
   }
 
@@ -230,35 +293,177 @@ export class ReportGenerator {
     <title>${title}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%); color: white; padding: 40px; text-align: center; }
-        .header h1 { font-size: 2.5rem; margin-bottom: 10px; font-weight: 700; }
-        .header p { font-size: 1.1rem; opacity: 0.9; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; padding: 30px 40px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; }
-        .stat-card { text-align: center; padding: 20px; background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .stat-number { font-size: 2rem; font-weight: bold; color: #2c3e50; margin-bottom: 5px; }
-        .stat-label { color: #6c757d; font-size: 0.9rem; }
-        .table-container { padding: 40px; overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-        th { background: #f8f9fa; padding: 16px; text-align: left; font-weight: 600; color: #495057; border-bottom: 2px solid #dee2e6; }
-        td { padding: 16px; border-bottom: 1px solid #dee2e6; vertical-align: middle; }
-        tr:hover { background-color: #f8f9fa; }
-        .hours-cell { font-weight: 600; font-size: 1rem; }
-        .hours-good { color: #28a745; }
-        .hours-partial { color: #ffc107; }
-        .hours-none { color: #dc3545; }
-        .note-cell { max-width: 300px; word-wrap: break-word; font-style: italic; color: #6c757d; }
-        .ooo-badge { background: #28a745; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; }
-        .warning-badge { color: #fd7e14; font-size: 1.2rem; margin-left: 8px; }
-        .footer { background: #f8f9fa; padding: 20px 40px; text-align: center; color: #6c757d; font-size: 0.9rem; }
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            background: #ffffff; 
+            color: #1a202c; 
+            line-height: 1.5;
+            padding: 0;
+        }
+        .container { 
+            max-width: 210mm; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 15mm;
+        }
+        
+        .header { 
+            margin-bottom: 25px; 
+            padding-bottom: 15px;
+            border-bottom: 2px solid #2563eb;
+        }
+        .header h1 { 
+            font-size: 24px; 
+            color: #2563eb; 
+            font-weight: 600; 
+            margin-bottom: 4px;
+            letter-spacing: -0.3px;
+        }
+        .header .subtitle { 
+            font-size: 13px; 
+            color: #64748b; 
+            font-weight: 400;
+        }
+        
+        .meta-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 12px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .date-info {
+            font-size: 13px;
+            color: #475569;
+            font-weight: 500;
+        }
+        .report-id {
+            font-size: 11px;
+            color: #94a3b8;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .stats { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
+            gap: 15px; 
+            margin-bottom: 25px;
+        }
+        .stat-card { 
+            background: #f8fafc; 
+            border: 1px solid #e2e8f0;
+            padding: 16px; 
+            border-radius: 6px; 
+            text-align: center;
+        }
+        .stat-number { 
+            font-size: 20px; 
+            font-weight: 700; 
+            color: #1e293b;
+            margin-bottom: 3px;
+        }
+        .stat-label { 
+            font-size: 11px; 
+            color: #64748b;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        
+        .table-container { 
+            border: 1px solid #e2e8f0;
+            border-radius: 6px; 
+            overflow: hidden; 
+            margin-bottom: 25px;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th { 
+            background: #f1f5f9; 
+            padding: 12px 14px; 
+            text-align: left; 
+            font-weight: 600; 
+            color: #334155; 
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            border-bottom: 1px solid #cbd5e1;
+        }
+        td { 
+            padding: 10px 14px; 
+            border-bottom: 1px solid #f1f5f9; 
+            vertical-align: middle;
+            font-size: 13px;
+        }
+        tr:last-child td { border-bottom: none; }
+        
+        .hours-cell { font-weight: 600; }
+        .hours-good { color: #059669; }
+        .hours-partial { color: #d97706; }
+        .hours-none { color: #dc2626; }
+        
+        .highlight-row { 
+            background-color: #fef3c7 !important; 
+            border-left: 3px solid #f59e0b;
+        }
+        
+        .group-header { 
+            background-color: #e2e8f0 !important; 
+            font-weight: 600;
+            color: #475569;
+        }
+        .group-header td {
+            padding: 8px 14px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        
+        .note-cell { 
+            max-width: 200px; 
+            word-wrap: break-word; 
+            color: #64748b; 
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .warning-badge { 
+            color: #ea580c; 
+            font-size: 13px; 
+            margin-left: 5px;
+        }
+        
+        .footer { 
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center; 
+            color: #94a3b8; 
+            font-size: 10px;
+            line-height: 1.5;
+        }
+        .footer a {
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Print optimizations */
+        @media print {
+            .container { padding: 10mm; }
+            .header h1 { font-size: 20px; }
+            .stat-number { font-size: 18px; }
+            th, td { padding: 8px 10px; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 FreshBooks Time Report</h1>
-            <p>${title}</p>
+            <h1>📋 ${title}</h1>
         </div>
         <div class="stats">
             <div class="stat-card">
@@ -293,8 +498,7 @@ export class ReportGenerator {
 
     if (!this.options.range) {
       html += `
-                        <th>📝 Note</th>
-                        <th>🏖️ Status</th>`;
+                        <th>📝 Note</th>`;
     }
 
     html += `
@@ -302,42 +506,59 @@ export class ReportGenerator {
                 </thead>
                 <tbody>`;
 
-    for (const result of results) {
-      const { member, hours, note, oooStatus } = result;
+    // Group results for better organization
+    const groupedResults = this.groupResults(results);
 
-      let hourClass = 'hours-none';
-      if (this.options.range) {
-        if (hours >= totalExpectedHours) hourClass = 'hours-good';
-        else if (hours > 0) hourClass = 'hours-partial';
-      } else {
-        if (hours > 0) hourClass = 'hours-partial';
+    // Display groups in order: worked hours first, then OOO, then others
+    const orderedGroups = [
+      { title: '💼 Worked Hours', results: groupedResults.workedHours, highlight: !this.options.range },
+      { title: '🏖️ Out of Office', results: groupedResults.ooo, highlight: false },
+      { title: '❓ No Hours / Other', results: groupedResults.other, highlight: false }
+    ].filter(group => group.results.length > 0);
+
+    for (const group of orderedGroups) {
+      if (orderedGroups.length > 1) {
+        html += `
+                    <tr class="group-header">
+                        <td colspan="${this.options.range ? 2 : 3}"><strong>${group.title}</strong></td>
+                    </tr>`;
       }
 
-      html += `
-                    <tr>
+      for (const result of group.results) {
+        const { member, hours, note, oooStatus } = result;
+
+        let hourClass = 'hours-none';
+        let rowClass = '';
+
+        if (this.options.range) {
+          if (hours >= totalExpectedHours) hourClass = 'hours-good';
+          else if (hours > 0) hourClass = 'hours-partial';
+        } else {
+          if (hours > 0) {
+            hourClass = 'hours-partial';
+            rowClass = 'highlight-row'; // Highlight rows with >0 hours for single day
+          }
+        }
+
+        html += `
+                    <tr class="${rowClass}">
                         <td><strong>${member.first_name} ${member.last_name}</strong></td>
                         <td class="hours-cell ${hourClass}">${hours}h`;
 
-      if (!this.options.range && hours > 0) {
-        html += '<span class="warning-badge">⚠️</span>';
-      }
-
-      html += '</td>';
-
-      if (!this.options.range) {
-        html += `
-                        <td class="note-cell">${escapeHtml(note)}</td>
-                        <td>`;
-
-        if (oooStatus) {
-          html += '<span class="ooo-badge">Out of Office</span>';
+        if (!this.options.range && hours > 0) {
+          html += '<span class="warning-badge">⚠️</span>';
         }
 
         html += '</td>';
-      }
 
-      html += `
+        if (!this.options.range) {
+          html += `
+                        <td class="note-cell">${escapeHtml(note)}</td>`;
+        }
+
+        html += `
                     </tr>`;
+      }
     }
 
     html += `
@@ -345,7 +566,7 @@ export class ReportGenerator {
             </table>
         </div>
         <div class="footer">
-            Generated on ${formattedDate} at ${formattedTime} | FreshBooks API Integration
+            Generated on ${formattedDate} at ${formattedTime} | by Josue Hidalgo Ramírez via <a href="https://github.com/josuebass09/freshbook-time-checker" target="_blank">FreshBooks Time Checker</a>
         </div>
     </div>
 </body>
