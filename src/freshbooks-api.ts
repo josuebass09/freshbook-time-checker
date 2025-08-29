@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { config } from './config';
-import { FBTokenResponse, FBTimeEntriesResponse, FBTeamMembersResponse } from './types';
-
+import { FBTokenResponse, FBTimeEntriesResponse, FBTeamMembersResponse, FBTeamMembersAPIResponse } from './types';
+const BASE_URL = 'https://api.freshbooks.com';
 export class FreshBooksAPI {
   private accessToken: string;
 
@@ -10,7 +10,7 @@ export class FreshBooksAPI {
   }
 
   async generateAccessToken(code: string): Promise<string> {
-    const response = await axios.post<FBTokenResponse>('https://api.freshbooks.com/auth/oauth/token', {
+    const response = await axios.post<FBTokenResponse>(`${BASE_URL}/auth/oauth/token`, {
       grant_type: 'authorization_code',
       client_id: config.clientId,
       client_secret: config.clientSecret,
@@ -43,7 +43,7 @@ export class FreshBooksAPI {
     const startParam = `${startDate}T00:00:00Z`;
     const endParam = `${endDate}T23:59:59Z`;
 
-    const url = `https://api.freshbooks.com/timetracking/business/${config.businessId}/time_entries`;
+    const url = `${BASE_URL}/timetracking/business/${config.businessId}/time_entries`;
 
     const response = await axios.get<FBTimeEntriesResponse>(url, {
       params: {
@@ -78,34 +78,23 @@ export class FreshBooksAPI {
       throw new Error('Access token is required');
     }
 
-    const url = `https://api.freshbooks.com/auth/api/v1/users/me`;
-    
+    const url = `${BASE_URL}/auth/api/v1/businesses/${config.businessId}/team_members`;
+
     try {
-      // First get the current user to understand the business structure
-      const meResponse = await axios.get(url, {
+      const teamResponse = await axios.get<FBTeamMembersAPIResponse>(url, {
         headers: {
           'Authorization': `Bearer ${this.accessToken}`,
           'Content-Type': 'application/json'
         }
       });
 
-      // Then fetch business users/team members
-      const businessUrl = `https://api.freshbooks.com/auth/api/v1/users`;
-      const teamResponse = await axios.get<FBTeamMembersResponse>(businessUrl, {
-        params: {
-          business_id: config.businessId
-        },
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!teamResponse.data.users) {
+      if (!teamResponse.data.response || !Array.isArray(teamResponse.data.response)) {
         throw new Error('No team members found in API response');
       }
 
-      return teamResponse.data;
+      const { response: users } = teamResponse.data;
+
+      return { users };
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401) {

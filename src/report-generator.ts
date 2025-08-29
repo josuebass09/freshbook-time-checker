@@ -17,18 +17,20 @@ export class ReportGenerator {
   private api: FreshBooksAPI;
   private readonly teamMembers: FBTeamMember[];
   private options: ReportOptions;
+  private readonly minimumHoursPerMonth: number;
 
-  constructor(api: FreshBooksAPI, teamMembers: FBTeamMember[], options: ReportOptions) {
+  constructor(api: FreshBooksAPI, teamMembers: FBTeamMember[], options: ReportOptions, minimumHoursPerMonth = 160) {
     this.api = api;
     this.teamMembers = teamMembers;
     this.options = options;
+    this.minimumHoursPerMonth = minimumHoursPerMonth;
   }
 
   async generateReport(): Promise<void> {
-    console.log('\n🚀 Starting FreshBooks Time Report Generation...\n');
+    console.log('\nStarting FreshBooks Time Report Generation...\n');
 
     const countOfDays = countWeekdays(this.options.startDate, this.options.endDate, this.options.range);
-    const totalExpectedHours = countOfDays * 8;
+    const totalExpectedHours = countOfDays < 20 ? (countOfDays * 8) : this.minimumHoursPerMonth;
 
     const results: Array<{
       member: FBTeamMember;
@@ -45,7 +47,12 @@ export class ReportGenerator {
 
       try {
         const endDate = this.options.range ? this.options.endDate : this.options.startDate;
-        const response = await this.api.fetchTimeEntries(member.identity_id, this.options.startDate, endDate);
+
+        if (!member.identity_id) {
+          console.log(`⚠️  Skipping ${member.first_name} ${member.last_name} - no identity_id`);
+          continue;
+        }
+        const response = await this.api.fetchTimeEntries(member.identity_id.toString(), this.options.startDate, endDate);
 
         const totalLoggedHours = calculateLoggedHours(response.meta.total_logged || 0);
         const note = this.options.range ? '' : getNoteValue(response);
@@ -119,15 +126,13 @@ export class ReportGenerator {
 
   private showProgress(current: number, total: number): void {
     const percentage = Math.floor((current * 100) / total);
-    const spinners = ['|', '/', '-', '\\'];
-    const spinner = spinners[current % 4];
 
     process.stdout.write(`\r\x1b[K`); // Clear line
 
     if (current === total) {
       process.stdout.write(`\x1b[32m✅ Completed\x1b[0m │ \x1b[33m${current}\x1b[0m/\x1b[33m${total}\x1b[0m team members processed`);
     } else {
-      process.stdout.write(`\x1b[36m${spinner} Processing\x1b[0m │ \x1b[33m${percentage}%\x1b[0m`);
+      process.stdout.write(`Progress\x1b[0m │ \x1b[33m${percentage}%\x1b[0m`);
     }
   }
 
@@ -184,11 +189,11 @@ export class ReportGenerator {
     const htmlContent = this.generateHTMLContent(results, totalHours, countOfDays, totalExpectedHours, title);
 
     await fs.writeFile(filename, htmlContent);
-    console.log(`🌐 HTML Report saved to: ${filename}`);
+    console.log(`HTML Report saved to: ${filename}`);
 
     // Try to open in browser
     const fullPath = path.resolve(filename);
-    console.log(`🔗 HTML Report URL: file://${fullPath}`);
+    console.log(`HTML Report URL: file://${fullPath}`);
 
     try {
       const { exec } = require('child_process');
@@ -199,9 +204,9 @@ export class ReportGenerator {
       } else {
         exec(`xdg-open "${fullPath}"`);
       }
-      console.log('🌐 Opening HTML report in browser...');
+      console.log('Opening HTML report in browser...');
     } catch (error) {
-      console.log('⚠️  Could not auto-open browser. Please manually open the file.');
+      console.log('Could not auto-open browser. Please manually open the file.');
     }
   }
 
@@ -272,7 +277,7 @@ export class ReportGenerator {
             </div>
             <div class="stat-card">
                 <div class="stat-number">${totalExpectedHours}</div>
-                <div class="stat-label">Expected Hours</div>
+                <div class="stat-label">Minimum Expected Hours</div>
             </div>`;
     }
 
