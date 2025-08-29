@@ -43,15 +43,15 @@ export class ReportGenerator {
 
     for (let i = 0; i < this.teamMembers.length; i++) {
       const member = this.teamMembers[i];
-      this.showProgress(i, this.teamMembers.length);
 
       try {
         const endDate = this.options.range ? this.options.endDate : this.options.startDate;
-
+        
         if (!member.identity_id) {
           console.log(`⚠️  Skipping ${member.first_name} ${member.last_name} - no identity_id`);
           continue;
         }
+
         const response = await this.api.fetchTimeEntries(member.identity_id.toString(), this.options.startDate, endDate);
 
         const totalLoggedHours = calculateLoggedHours(response.meta.total_logged || 0);
@@ -68,6 +68,7 @@ export class ReportGenerator {
         });
 
         this.displayMemberResult(member, totalLoggedHours, note, oooStatus, totalExpectedHours);
+        this.showBottomProgress(i + 1, this.teamMembers.length);
 
       } catch (error) {
         console.error(`  👤 ${member.first_name} ${member.last_name} .................. ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -124,15 +125,15 @@ export class ReportGenerator {
     console.log(output);
   }
 
-  private showProgress(current: number, total: number): void {
+  private showBottomProgress(current: number, total: number): void {
     const percentage = Math.floor((current * 100) / total);
+    // Simple progress display on same line, then newline
+    console.log(`Progress: ${current}/${total} (${percentage}%)`);
+  }
 
-    process.stdout.write(`\r\x1b[K`); // Clear line
-
+  private showProgress(current: number, total: number): void {
     if (current === total) {
-      process.stdout.write(`\x1b[32m✅ Completed\x1b[0m │ \x1b[33m${current}\x1b[0m/\x1b[33m${total}\x1b[0m team members processed`);
-    } else {
-      process.stdout.write(`Progress\x1b[0m │ \x1b[33m${percentage}%\x1b[0m`);
+      console.log(`\x1b[32m✅ Completed\x1b[0m │ \x1b[33m${current}\x1b[0m/\x1b[33m${total}\x1b[0m team members processed`);
     }
   }
 
