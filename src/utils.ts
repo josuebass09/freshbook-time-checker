@@ -72,9 +72,3 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function escapeCsv(text: string): string {
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
-}

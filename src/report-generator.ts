@@ -12,7 +12,7 @@ import {
   checkOOOStatus,
   formatDate,
   formatTime,
-  escapeHtml,
+  escapeHtml
 } from './utils';
 import {TokenManager} from "./token-manager";
 
