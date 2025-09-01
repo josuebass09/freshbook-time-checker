@@ -36,9 +36,9 @@ program
   .argument('<start-date>', 'Start date (YYYY-MM-DD)')
   .argument('[end-date]', 'End date (YYYY-MM-DD), defaults to start date')
   .option('-s, --single-day', 'Query only for start date (overrides end-date)')
-  .option('--csv', 'Generate CSV output only')
-  .option('--html', 'Generate HTML output only')
-  .action(async (startDate: string, endDate: string = startDate, options: { singleDay?: boolean; csv?: boolean; html?: boolean }) => {
+  .option('--excel', 'Generate Excel output only')
+  .option('--pdf', 'Generate PDF output only')
+  .action(async (startDate: string, endDate: string = startDate, options: { singleDay?: boolean; excel?: boolean; pdf?: boolean }) => {
     try {
       validateConfig();
 
@@ -46,11 +46,11 @@ program
       const outputFormats: ('csv' | 'html')[] = [];
 
       // If no specific format is requested, generate both by default
-      if (!options.csv && !options.html) {
+      if (!options.excel && !options.pdf) {
         outputFormats.push('csv', 'html');
       } else {
-        if (options.csv) outputFormats.push('csv');
-        if (options.html) outputFormats.push('html');
+        if (options.excel) outputFormats.push('csv');
+        if (options.pdf) outputFormats.push('html');
       }
 
       validateDates(startDate, endDate);

@@ -20,7 +20,7 @@ A comprehensive tool to check FreshBooks time entries for team members with mult
    npm run build
    ```
 
-4. **Generate OAuth token (first time setup):**
+4. **Generate Refresh token (first time setup) by passing the authorization_code from the URI page:**
    ```bash
    npm run check-time generate-token
    ```
@@ -37,18 +37,6 @@ npm run check-time 2025-08-28
 ```bash
 # Check time entries for a date range
 npm run check-time 2025-08-28 2025-08-30
-```
-
-### Output Format Options
-```bash
-# Generate only CSV
-npm run check-time 2025-08-28 --csv
-
-# Generate only HTML
-npm run check-time 2025-08-28 --html
-
-# Generate both formats (default: Excel, PDF)
-npm run check-time 2025-08-28
 ```
 
 ## Scripts
