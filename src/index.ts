@@ -38,7 +38,7 @@ program
   .option('-s, --single-day', 'Query only for start date (overrides end-date)')
   .option('--csv', 'Generate CSV output only')
   .option('--html', 'Generate HTML output only')
-  .action(async (startDate: string, endDate: string = startDate, options: any) => {
+  .action(async (startDate: string, endDate: string = startDate, options: { singleDay?: boolean; csv?: boolean; html?: boolean }) => {
     try {
       validateConfig();
 
@@ -64,7 +64,20 @@ program
       }
 
       console.log('🔍 Fetching team members from FreshBooks API...');
-      const teamMembersResponse = await api.fetchTeamMembers();
+      
+      let teamMembersResponse;
+      try {
+        teamMembersResponse = await api.fetchTeamMembers();
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Access token is invalid or expired')) {
+          console.log('🔑 Token expired, requesting new authorization...');
+          await tokenManager.handleExpiredToken();
+          teamMembersResponse = await api.fetchTeamMembers();
+        } else {
+          throw error;
+        }
+      }
+      
       const teamMembers = teamMembersResponse.users;
       console.log(`👥 Found ${teamMembers.length} active team members`);
 
@@ -75,7 +88,7 @@ program
         outputFormats
       };
 
-      const reportGenerator = new ReportGenerator(api, teamMembers, reportOptions);
+      const reportGenerator = new ReportGenerator(api, teamMembers, reportOptions, 160, tokenManager);
       await reportGenerator.generateReport();
 
     } catch (error) {

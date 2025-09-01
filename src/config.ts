@@ -8,7 +8,8 @@ export const config: Config = {
   clientSecret: process.env.FRESHBOOKS_CLIENT_SECRET || '',
   redirectUri: process.env.FRESHBOOKS_REDIRECT_URI || '',
   businessId: process.env.FRESHBOOKS_BUSINESS_ID || '',
-  accessToken: process.env.FRESHBOOKS_ACCESS_TOKEN || ''
+  accessToken: process.env.FRESHBOOKS_ACCESS_TOKEN || '',
+  refreshToken: process.env.FRESHBOOKS_REFRESH_TOKEN || ''
 };
 
 export function validateConfig(): void {

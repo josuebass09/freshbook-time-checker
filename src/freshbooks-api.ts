@@ -4,9 +4,11 @@ import { FBTokenResponse, FBTimeEntriesResponse, FBTeamMembersResponse, FBTeamMe
 const BASE_URL = 'https://api.freshbooks.com';
 export class FreshBooksAPI {
   private accessToken: string;
+  private refreshToken: string;
 
-  constructor(accessToken?: string) {
+  constructor(accessToken?: string, refreshToken?: string) {
     this.accessToken = accessToken || config.accessToken;
+    this.refreshToken = refreshToken || config.refreshToken || '';
   }
 
   async generateAccessToken(code: string): Promise<string> {
@@ -32,6 +34,10 @@ export class FreshBooksAPI {
     }
 
     this.accessToken = response.data.access_token;
+    if (response.data.refresh_token) {
+      this.refreshToken = response.data.refresh_token;
+    }
+
     return response.data.access_token;
   }
 
@@ -65,12 +71,53 @@ export class FreshBooksAPI {
     return response.data;
   }
 
+  async refreshAccessToken(): Promise<string> {
+    if (!this.refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    const response = await axios.post<FBTokenResponse>(`${BASE_URL}/auth/oauth/token`, {
+      grant_type: 'refresh_token',
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      refresh_token: this.refreshToken
+    }, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      transformRequest: [(data) => {
+        return Object.keys(data)
+          .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
+          .join('&');
+      }]
+    });
+
+    if (response.data.error || !response.data.access_token) {
+      throw new Error('Failed to refresh token');
+    }
+
+    this.accessToken = response.data.access_token;
+    if (response.data.refresh_token) {
+      this.refreshToken = response.data.refresh_token;
+    }
+
+    return this.accessToken;
+  }
+
   setAccessToken(token: string): void {
     this.accessToken = token;
   }
 
+  setRefreshToken(token: string): void {
+    this.refreshToken = token;
+  }
+
   getAccessToken(): string {
     return this.accessToken;
+  }
+
+  getRefreshToken(): string {
+    return this.refreshToken;
   }
 
   async fetchTeamMembers(): Promise<FBTeamMembersResponse> {

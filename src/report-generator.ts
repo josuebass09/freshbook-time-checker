@@ -1,6 +1,8 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import puppeteer from 'puppeteer';
+import * as XLSX from 'xlsx';
+import { exec } from 'child_process';
 import { FBTeamMember, ReportOptions } from './types';
 import { FreshBooksAPI } from './freshbooks-api';
 import {
@@ -11,20 +13,22 @@ import {
   formatDate,
   formatTime,
   escapeHtml,
-  escapeCsv
 } from './utils';
+import {TokenManager} from "./token-manager";
 
 export class ReportGenerator {
   private api: FreshBooksAPI;
   private readonly teamMembers: FBTeamMember[];
   private options: ReportOptions;
   private readonly minimumHoursPerMonth: number;
+  private readonly tokenManager?: TokenManager;
 
-  constructor(api: FreshBooksAPI, teamMembers: FBTeamMember[], options: ReportOptions, minimumHoursPerMonth = 160) {
+  constructor(api: FreshBooksAPI, teamMembers: FBTeamMember[], options: ReportOptions, minimumHoursPerMonth = 160, tokenManager?: TokenManager) {
     this.api = api;
     this.teamMembers = teamMembers;
     this.options = options;
     this.minimumHoursPerMonth = minimumHoursPerMonth;
+    this.tokenManager = tokenManager;
   }
 
   async generateReport(): Promise<void> {
@@ -50,13 +54,24 @@ export class ReportGenerator {
         const endDate = this.options.range ? this.options.endDate : this.options.startDate;
 
         if (!member.identity_id) {
-          console.log(`⚠️  Skipping ${member.first_name} ${member.last_name} - no identity_id`);
+          console.log(`⚠️ Skipping ${member.first_name} ${member.last_name} - no identity_id`);
           continue;
         }
 
         processedCount++;
 
-        const response = await this.api.fetchTimeEntries(member.identity_id.toString(), this.options.startDate, endDate);
+        let response;
+        try {
+          response = await this.api.fetchTimeEntries(member.identity_id.toString(), this.options.startDate, endDate);
+        } catch (apiError) {
+          if (apiError instanceof Error && apiError.message.includes('Access token is invalid or expired') && this.tokenManager) {
+            console.log('\n🔑 Token expired during report generation, requesting new authorization...');
+            await this.tokenManager.handleExpiredToken();
+            response = await this.api.fetchTimeEntries(member.identity_id.toString(), this.options.startDate, endDate);
+          } else {
+            throw apiError;
+          }
+        }
 
         const totalLoggedHours = calculateLoggedHours(response.meta.total_logged || 0);
         const note = this.options.range ? '' : getNoteValue(response);
@@ -158,10 +173,9 @@ export class ReportGenerator {
     for (const result of results) {
       if (result.hours > 0) {
         workedHours.push(result);
-      } else if (result.oooStatus || result.note.toLowerCase().includes('ooo') ||
-                 result.note.toLowerCase().includes('out of office') ||
-                 result.note.toLowerCase().includes('vacation') ||
-                 result.note.toLowerCase().includes('sick')) {
+      } else if (result.oooStatus
+          || result.note.toLowerCase().includes('ooo')
+          || result.note.toLowerCase().includes('out of office')) {
         ooo.push(result);
       } else {
         other.push(result);
@@ -180,7 +194,7 @@ export class ReportGenerator {
     const dateStr = this.options.range ? this.options.endDate : this.options.startDate;
 
     if (this.options.outputFormats.includes('csv')) {
-      await this.generateCSV(results, dateStr);
+      await this.generateExcel(results, dateStr);
     }
 
     if (this.options.outputFormats.includes('html')) {
@@ -188,25 +202,43 @@ export class ReportGenerator {
     }
   }
 
-  private async generateCSV(results: Array<{ member: FBTeamMember; hours: number; note: string; oooStatus: boolean }>, dateStr: string): Promise<void> {
-    const filename = `freshbooks-time-report-${dateStr}.csv`;
+  private async generateExcel(results: Array<{ member: FBTeamMember; hours: number; note: string; oooStatus: boolean }>, dateStr: string): Promise<void> {
+    const filename = `freshbooks-time-report-${dateStr}.xlsx`;
 
-    let csvContent = this.options.range
-      ? 'First Name,Last Name,Total Logged Hours\n'
-      : 'First Name,Last Name,Total Logged Hours,Note\n';
+    const excelData = [];
 
-    for (const result of results) {
-      const { member, hours, note } = result;
-
-      if (this.options.range) {
-        csvContent += `${member.first_name},${member.last_name},${hours}\n`;
-      } else {
-        csvContent += `${member.first_name},${member.last_name},${hours},${escapeCsv(note)}\n`;
+    if (this.options.range) {
+        excelData.push(['First Name', 'Last Name', 'Total Logged Hours']);
+      for (const result of results) {
+        const { member, hours } = result;
+          excelData.push([member.first_name, member.last_name, hours]);
+      }
+    } else {
+        excelData.push(['First Name', 'Last Name', 'Total Logged Hours', 'Note']);
+      for (const result of results) {
+        const { member, hours, note } = result;
+          excelData.push([member.first_name, member.last_name, hours, note]);
       }
     }
 
-    await fs.writeFile(filename, csvContent);
-    console.log(`📄 CSV Report saved to: ${filename}`);
+    const worksheet = XLSX.utils.aoa_to_sheet(excelData);
+
+    const hoursColumnIndex = this.options.range ? 2 : 2; // Column C (0-based index 2)
+    const range = XLSX.utils.decode_range(worksheet['!ref']!);
+
+    for (let row = range.s.r; row <= range.e.r; row++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: hoursColumnIndex });
+      if (!worksheet[cellAddress]) continue;
+
+      if (!worksheet[cellAddress].s) worksheet[cellAddress].s = {};
+      worksheet[cellAddress].s.alignment = { horizontal: 'center' };
+    }
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Time Report');
+
+    await XLSX.writeFile(workbook, filename);
+    console.log(`📄 Excel Report saved to: ${filename}`);
   }
 
   private async generatePDF(
@@ -224,7 +256,7 @@ export class ReportGenerator {
     const htmlContent = this.generateHTMLContent(results, totalHours, countOfDays, totalExpectedHours, title);
 
     try {
-      console.log('🔄 Generating PDF...');
+      console.log('⏳ Generating PDF...');
       const browser = await puppeteer.launch({ headless: true });
       const page = await browser.newPage();
 
@@ -251,7 +283,6 @@ export class ReportGenerator {
       console.log(`PDF Report path: ${fullPath}`);
 
       try {
-        const { exec } = require('child_process');
         if (process.platform === 'darwin') {
           exec(`open "${fullPath}"`);
         } else if (process.platform === 'win32') {
@@ -261,7 +292,7 @@ export class ReportGenerator {
         }
         console.log('Opening PDF report...');
       } catch (error) {
-        console.log('Could not auto-open PDF. Please manually open the file.');
+        console.log('Could not auto-open PDF. Please manually open the file.', error);
       }
     } catch (error) {
       console.error('❌ Error generating PDF:', error instanceof Error ? error.message : 'Unknown error');
@@ -525,7 +556,7 @@ export class ReportGenerator {
       }
 
       for (const result of group.results) {
-        const { member, hours, note, oooStatus } = result;
+        const { member, hours, note } = result;
 
         let hourClass = 'hours-none';
         let rowClass = '';

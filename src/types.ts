@@ -49,6 +49,9 @@ export interface FBTimeEntriesResponse {
 
 export interface FBTokenResponse {
   access_token: string;
+  refresh_token?: string;
+  token_type?: string;
+  expires_in?: number;
   error?: string;
 }
 
@@ -58,6 +61,7 @@ export interface Config {
   redirectUri: string;
   businessId: string;
   accessToken: string;
+  refreshToken?: string;
 }
 
 export interface ReportOptions {

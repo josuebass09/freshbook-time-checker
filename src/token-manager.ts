@@ -28,8 +28,11 @@ export class TokenManager {
 
           console.log(`✅ Access token generated: ${accessToken}`);
 
-          await this.updateEnvFile(accessToken);
-          console.log('✅ Access token updated in .env file');
+          const refreshToken = this.api.getRefreshToken();
+          await this.updateEnvFile(accessToken, refreshToken);
+          console.log('✅ Access token and refresh token updated in .env file');
+
+          this.api.setAccessToken(accessToken);
 
           resolve(accessToken);
         } catch (error) {
@@ -39,17 +42,51 @@ export class TokenManager {
     });
   }
 
-  private async updateEnvFile(accessToken: string): Promise<void> {
+  async handleExpiredToken(): Promise<void> {
+    // First try to refresh using refresh token
+    if (this.api.getRefreshToken()) {
+      try {
+        console.log('\n🔄 Attempting to refresh access token...');
+        const newAccessToken = await this.api.refreshAccessToken();
+        const newRefreshToken = this.api.getRefreshToken();
+
+        await this.updateEnvFile(newAccessToken, newRefreshToken);
+        console.log('✅ Access token refreshed successfully');
+        return;
+      } catch (error) {
+        console.log('⚠️  Refresh token failed, falling back to authorization code...', error);
+      }
+    }
+
+    console.log('\n⚠️  Access token is invalid or expired. Please provide a new authorization code.');
+    console.log('💡 To get a new authorization code, visit your FreshBooks OAuth authorization URL.');
+
+    await this.generateAndSaveToken();
+  }
+
+  private async updateEnvFile(accessToken: string, refreshToken?: string): Promise<void> {
     try {
       let envContent = await fs.readFile(this.envPath, 'utf8');
 
-      const tokenRegex = /^FRESHBOOKS_ACCESS_TOKEN=.*$/m;
-      const newTokenLine = `FRESHBOOKS_ACCESS_TOKEN=${accessToken}`;
+      const accessTokenRegex = /^FRESHBOOKS_ACCESS_TOKEN=.*$/m;
+      const refreshTokenRegex = /^FRESHBOOKS_REFRESH_TOKEN=.*$/m;
 
-      if (tokenRegex.test(envContent)) {
-        envContent = envContent.replace(tokenRegex, newTokenLine);
+      const newAccessTokenLine = `FRESHBOOKS_ACCESS_TOKEN=${accessToken}`;
+
+      if (accessTokenRegex.test(envContent)) {
+        envContent = envContent.replace(accessTokenRegex, newAccessTokenLine);
       } else {
-        envContent += `\n${newTokenLine}\n`;
+        envContent += `\n${newAccessTokenLine}\n`;
+      }
+
+      if (refreshToken) {
+        const newRefreshTokenLine = `FRESHBOOKS_REFRESH_TOKEN=${refreshToken}`;
+
+        if (refreshTokenRegex.test(envContent)) {
+          envContent = envContent.replace(refreshTokenRegex, newRefreshTokenLine);
+        } else {
+          envContent += `${newRefreshTokenLine}\n`;
+        }
       }
 
       await fs.writeFile(this.envPath, envContent);
@@ -60,16 +97,6 @@ export class TokenManager {
 
   async hasValidToken(): Promise<boolean> {
     const token = this.api.getAccessToken();
-    if (!token || token.trim() === '') {
-      return false;
-    }
-
-    // Test the token by making a simple API call
-    try {
-      // We'll try to fetch time entries with a minimal request to test token validity
-      return true; // For now, just check if token exists - we can enhance this later
-    } catch (error) {
-      return false;
-    }
+    return !(!token || token.trim() === '');
   }
 }

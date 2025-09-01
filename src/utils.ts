@@ -5,10 +5,10 @@ export function calculateLoggedHours(totalLoggedSeconds: number): number {
 export function countWeekdays(startDate: string, endDate: string, isRange: boolean): number {
   const start = new Date(startDate);
   const end = isRange ? new Date(endDate) : new Date(startDate);
-  
+
   let count = 0;
   const current = new Date(start);
-  
+
   while (current <= end) {
     const dayOfWeek = current.getDay();
     if (dayOfWeek >= 1 && dayOfWeek <= 5) {
@@ -16,33 +16,33 @@ export function countWeekdays(startDate: string, endDate: string, isRange: boole
     }
     current.setDate(current.getDate() + 1);
   }
-  
+
   return count;
 }
 
-export function getNoteValue(response: any): string {
+export function getNoteValue(response: { time_entries?: Array<{ note?: string }> }): string {
   if (!response.time_entries || !Array.isArray(response.time_entries)) {
     return '';
   }
-  
-  const noteEntry = response.time_entries.find((entry: any) => entry.note && entry.note.trim() !== '');
+
+  const noteEntry = response.time_entries.find((entry) => entry.note && entry.note.trim() !== '');
   return noteEntry?.note || '';
 }
 
-export function checkOOOStatus(response: any, totalHours: number, isRange: boolean): boolean {
+export function checkOOOStatus(response: { time_entries?: Array<{ note?: string }> }, totalHours: number, isRange: boolean): boolean {
   if (isRange || totalHours > 0) {
     return false;
   }
-  
+
   if (!response.time_entries || !Array.isArray(response.time_entries)) {
     return false;
   }
-  
-  return response.time_entries.some((entry: any) => {
+
+  return response.time_entries.some((entry) => {
     if (!entry.note) return false;
     const note = entry.note.toLowerCase();
-    return note.includes('ooo') || 
-           note.includes('out of the office') || 
+    return note.includes('ooo') ||
+           note.includes('out of the office') ||
            note.includes('out of office');
   });
 }
