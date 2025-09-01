@@ -10,7 +10,8 @@
     "check-time": "npm run build && npm start",
     "report": "npm run dev",
     "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix"
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "test": "jest"
   },
   "keywords": [
     "freshbooks",
@@ -33,10 +34,13 @@
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
+    "@types/jest": "^30.0.0",
     "@types/node": "^22.5.4",
     "@typescript-eslint/eslint-plugin": "^8.41.0",
     "@typescript-eslint/parser": "^8.41.0",
     "eslint": "^9.34.0",
+    "jest": "^30.1.2",
+    "ts-jest": "^29.4.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
   }

@@ -3,8 +3,13 @@ export function calculateLoggedHours(totalLoggedSeconds: number): number {
 }
 
 export function countWeekdays(startDate: string, endDate: string, isRange: boolean): number {
-  const start = new Date(startDate);
-  const end = isRange ? new Date(endDate) : new Date(startDate);
+  const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+  const start = new Date(startYear, startMonth - 1, startDay);
+  
+  const end = isRange ? (() => {
+    const [endYear, endMonth, endDayStr] = endDate.split('-').map(Number);
+    return new Date(endYear, endMonth - 1, endDayStr);
+  })() : new Date(startYear, startMonth - 1, startDay);
 
   let count = 0;
   const current = new Date(start);
