@@ -1,19 +1,28 @@
 import axios from 'axios';
 import { config } from './config';
-import { FBTokenResponse, FBTimeEntriesResponse, FBTeamMembersResponse, FBTeamMembersAPIResponse } from './types';
-const BASE_URL = 'https://api.freshbooks.com';
-export class FreshBooksAPI {
-  private accessToken: string;
-  private refreshToken: string;
+import {
+    FBTokenResponse,
+    FBTimeEntriesResponse,
+    FBTeamMembersResponse,
+    FBTeamMembersAPIResponse,
+    GrantType
+} from './types';
 
-  constructor(accessToken?: string, refreshToken?: string) {
-    this.accessToken = accessToken || config.accessToken;
-    this.refreshToken = refreshToken || config.refreshToken || '';
+export class FreshBooksAPI {
+  private _accessToken: string;
+  private _refreshToken: string;
+  private static readonly BASE_URL = config.baseUrl;
+  private static readonly BUSINESS_ID = config.businessId;
+
+  constructor(accessToken: string, refreshToken?: string) {
+    this._accessToken = accessToken;
+    this._refreshToken = refreshToken || '';
   }
 
   async generateAccessToken(code: string): Promise<string> {
-    const response = await axios.post<FBTokenResponse>(`${BASE_URL}/auth/oauth/token`, {
-      grant_type: 'authorization_code',
+      const endpoint = `${FreshBooksAPI.BASE_URL}/auth/oauth/token`;
+      const response = await axios.post<FBTokenResponse>(endpoint, {
+      grant_type: GrantType.AUTHORIZATION_CODE,
       client_id: config.clientId,
       client_secret: config.clientSecret,
       code,
@@ -33,23 +42,23 @@ export class FreshBooksAPI {
       throw new Error('Code expired or is not valid');
     }
 
-    this.accessToken = response.data.access_token;
+    this._accessToken = response.data.access_token;
     if (response.data.refresh_token) {
-      this.refreshToken = response.data.refresh_token;
+      this._refreshToken = response.data.refresh_token;
     }
 
     return response.data.access_token;
   }
 
   async fetchTimeEntries(identityId: string, startDate: string, endDate: string): Promise<FBTimeEntriesResponse> {
-    if (!this.accessToken) {
+    if (!this._accessToken) {
       throw new Error('Access token is required');
     }
 
     const startParam = `${startDate}T00:00:00Z`;
     const endParam = `${endDate}T23:59:59Z`;
 
-    const url = `${BASE_URL}/timetracking/business/${config.businessId}/time_entries`;
+    const url = `${FreshBooksAPI.BASE_URL}/timetracking/business/${FreshBooksAPI.BUSINESS_ID}/time_entries`;
 
     const response = await axios.get<FBTimeEntriesResponse>(url, {
       params: {
@@ -59,7 +68,7 @@ export class FreshBooksAPI {
         identity_id: identityId
       },
       headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
+        'Authorization': `Bearer ${this._accessToken}`,
         'Content-Type': 'application/json'
       }
     });
@@ -71,17 +80,20 @@ export class FreshBooksAPI {
     return response.data;
   }
 
-  async refreshAccessToken(): Promise<string> {
-    if (!this.refreshToken) {
+  async refreshAccessToken(): Promise<{ accessToken: string; refreshToken?: string }> {
+    if (!this._refreshToken) {
       throw new Error('No refresh token available');
     }
-
-    const response = await axios.post<FBTokenResponse>(`${BASE_URL}/auth/oauth/token`, {
-      grant_type: 'refresh_token',
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-      refresh_token: this.refreshToken
-    }, {
+    const payload = {
+        grant_type: GrantType.REFRESH_TOKEN,
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        refresh_token: this._refreshToken
+    };
+    const endpoint = `${FreshBooksAPI.BASE_URL}/auth/oauth/token`;
+    const response = await axios.post<FBTokenResponse>(
+        endpoint,
+        payload, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
       },
@@ -96,44 +108,49 @@ export class FreshBooksAPI {
       throw new Error('Failed to refresh token');
     }
 
-    this.accessToken = response.data.access_token;
+    this._accessToken = response.data.access_token;
+    let newRefreshToken = undefined;
     if (response.data.refresh_token) {
-      this.refreshToken = response.data.refresh_token;
+      this._refreshToken = response.data.refresh_token;
+      newRefreshToken = response.data.refresh_token;
     }
 
-    return this.accessToken;
+    return {
+      accessToken: this._accessToken,
+      refreshToken: newRefreshToken
+    };
   }
 
   setAccessToken(token: string): void {
-    this.accessToken = token;
+    this._accessToken = token;
   }
 
   setRefreshToken(token: string): void {
-    this.refreshToken = token;
+    this._refreshToken = token;
   }
 
-  getAccessToken(): string {
-    return this.accessToken;
+  accessToken(): string {
+    return this._accessToken;
   }
 
-  getRefreshToken(): string {
-    return this.refreshToken;
+  refreshToken(): string {
+    return this._refreshToken;
   }
 
   async fetchTeamMembers(): Promise<FBTeamMembersResponse> {
-    if (!this.accessToken) {
+    if (!this._accessToken) {
       throw new Error('Access token is required');
     }
 
-    const url = `${BASE_URL}/auth/api/v1/businesses/${config.businessId}/team_members`;
+    const endpoint = `${FreshBooksAPI.BASE_URL}/auth/api/v1/businesses/${FreshBooksAPI.BUSINESS_ID}/team_members`;
 
     try {
-      const teamResponse = await axios.get<FBTeamMembersAPIResponse>(url, {
+      const teamResponse = await axios.get<FBTeamMembersAPIResponse>(endpoint, {
         params: {
           active: true
         },
         headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
+          'Authorization': `Bearer ${this._accessToken}`,
           'Content-Type': 'application/json'
         }
       });

@@ -28,7 +28,7 @@ export class TokenManager {
 
           console.log(`✅ Access token generated: ${accessToken}`);
 
-          const refreshToken = this.api.getRefreshToken();
+          const refreshToken = this.api.refreshToken();
           await this.updateEnvFile(accessToken, refreshToken);
           console.log('✅ Access token and refresh token updated in .env file');
 
@@ -43,14 +43,17 @@ export class TokenManager {
   }
 
   async handleExpiredToken(): Promise<void> {
-    // First try to refresh using refresh token
-    if (this.api.getRefreshToken()) {
+    if (this.api.refreshToken()) {
       try {
         console.log('\n🔄 Attempting to refresh access token...');
-        const newAccessToken = await this.api.refreshAccessToken();
-        const newRefreshToken = this.api.getRefreshToken();
+        const tokenResponse = await this.api.refreshAccessToken();
 
-        await this.updateEnvFile(newAccessToken, newRefreshToken);
+        this.api.setAccessToken(tokenResponse.accessToken);
+        if (tokenResponse.refreshToken) {
+          this.api.setRefreshToken(tokenResponse.refreshToken);
+        }
+
+        await this.updateEnvFile(tokenResponse.accessToken, tokenResponse.refreshToken);
         console.log('✅ Access token refreshed successfully');
         return;
       } catch (error) {
@@ -67,10 +70,8 @@ export class TokenManager {
   private async updateEnvFile(accessToken: string, refreshToken?: string): Promise<void> {
     try {
       let envContent = await fs.readFile(this.envPath, 'utf8');
-
       const accessTokenRegex = /^FRESHBOOKS_ACCESS_TOKEN=.*$/m;
       const refreshTokenRegex = /^FRESHBOOKS_REFRESH_TOKEN=.*$/m;
-
       const newAccessTokenLine = `FRESHBOOKS_ACCESS_TOKEN=${accessToken}`;
 
       if (accessTokenRegex.test(envContent)) {
@@ -96,7 +97,7 @@ export class TokenManager {
   }
 
   async hasValidToken(): Promise<boolean> {
-    const token = this.api.getAccessToken();
+    const token = this.api.accessToken();
     return !(!token || token.trim() === '');
   }
 }

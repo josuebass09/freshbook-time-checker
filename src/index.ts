@@ -6,6 +6,7 @@ import { FreshBooksAPI } from './freshbooks-api';
 import { TokenManager } from './token-manager';
 import { ReportGenerator } from './report-generator';
 import { ReportOptions } from './types';
+import { config } from './config';
 
 const program = new Command();
 
@@ -20,8 +21,9 @@ program
   .action(async () => {
     try {
       validateConfig();
-
-      const api = new FreshBooksAPI();
+      const accessToken = config.accessToken;
+      const refreshToken = config.refreshToken;
+      const api = new FreshBooksAPI(accessToken, refreshToken);
       const tokenManager = new TokenManager(api);
 
       await tokenManager.generateAndSaveToken();
@@ -54,8 +56,9 @@ program
       }
 
       validateDates(startDate, endDate);
-
-      const api = new FreshBooksAPI();
+      const accessToken = config.accessToken;
+      const refreshToken = config.refreshToken;
+      const api = new FreshBooksAPI(accessToken, refreshToken);
       const tokenManager = new TokenManager(api);
 
       if (!(await tokenManager.hasValidToken())) {
@@ -64,7 +67,7 @@ program
       }
 
       console.log('🔍 Fetching team members from FreshBooks API...');
-      
+
       let teamMembersResponse;
       try {
         teamMembersResponse = await api.fetchTeamMembers();
@@ -77,7 +80,7 @@ program
           throw error;
         }
       }
-      
+
       const teamMembers = teamMembersResponse.users;
       console.log(`👥 Found ${teamMembers.length} active team members`);
 
@@ -123,8 +126,6 @@ function validateDates(startDate: string, endDate: string): void {
     throw new Error('Start date must be before or equal to end date');
   }
 }
-
-// Removed loadTeamMembers function - now using API to fetch team members directly
 
 program.parse();
 

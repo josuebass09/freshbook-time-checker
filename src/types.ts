@@ -62,6 +62,7 @@ export interface Config {
   businessId: string;
   accessToken: string;
   refreshToken?: string;
+  baseUrl: string;
 }
 
 export interface ReportOptions {
@@ -69,4 +70,9 @@ export interface ReportOptions {
   endDate: string;
   range: boolean;
   outputFormats: ('csv' | 'html')[];
+}
+
+export enum GrantType {
+    AUTHORIZATION_CODE = 'authorization_code',
+    REFRESH_TOKEN = 'refresh_token'
 }
