@@ -37,31 +37,53 @@ program
 program
   .argument('<start-date>', 'Start date (YYYY-MM-DD)')
   .argument('[end-date]', 'End date (YYYY-MM-DD), defaults to start date')
+  .argument('[format-param]', 'Format parameter (format=excel or format=pdf)')
   .option('-s, --single-day', 'Query only for start date (overrides end-date)')
   .option('--excel', 'Generate Excel output only')
   .option('--pdf', 'Generate PDF output only')
-  .action(async (startDate: string, endDate: string = startDate, options: { singleDay?: boolean; excel?: boolean; pdf?: boolean }) => {
+  .action(async (startDate: string, endDate: string = startDate, formatParam: string = '', options: { singleDay?: boolean; excel?: boolean; pdf?: boolean }) => {
     try {
       validateConfig();
 
-      const isRange = !options.singleDay && endDate !== startDate;
-      const outputFormats: ('csv' | 'html')[] = [];
+      // Handle case where endDate might actually be a format parameter
+      let actualEndDate = endDate;
+      let actualFormatParam = formatParam;
 
-      // If no specific format is requested, generate both by default
-      if (!options.excel && !options.pdf) {
-        outputFormats.push('csv', 'html');
-      } else {
-        if (options.excel) outputFormats.push('csv');
-        if (options.pdf) outputFormats.push('html');
+      // Second argument is format parameter, not end date
+      if (endDate && endDate.match(/^format=(excel|pdf)$/)) {
+        actualFormatParam = endDate;
+        actualEndDate = startDate; // Single day
       }
 
-      validateDates(startDate, endDate);
+      const isRange = !options.singleDay && actualEndDate !== startDate;
+      const outputFormats: ('csv' | 'html')[] = [];
+
+      // Parse format parameter (format=excel or format=pdf)
+      let formatFromParam: 'excel' | 'pdf' | null = null;
+      if (actualFormatParam) {
+        const formatMatch = actualFormatParam.match(/^format=(excel|pdf)$/);
+        if (formatMatch) {
+          formatFromParam = formatMatch[1] as 'excel' | 'pdf';
+        }
+      }
+
+      if (formatFromParam === 'excel' || options.excel) {
+        outputFormats.push('csv');
+      } else if (formatFromParam === 'pdf' || options.pdf) {
+        outputFormats.push('html');
+      } else {
+        // generate Excel only by default
+        outputFormats.push('csv');
+      }
+
+      validateDates(startDate, actualEndDate);
       const accessToken = config.accessToken;
       const refreshToken = config.refreshToken;
       const api = new FreshBooksAPI(accessToken, refreshToken);
       const tokenManager = new TokenManager(api);
+      const validToken = await tokenManager.hasValidToken();
 
-      if (!(await tokenManager.hasValidToken())) {
+      if (!validToken) {
         console.log('⚠️  No valid access token found. Generating new token...');
         await tokenManager.generateAndSaveToken();
       }
@@ -86,7 +108,7 @@ program
 
       const reportOptions: ReportOptions = {
         startDate,
-        endDate: isRange ? endDate : startDate,
+        endDate: isRange ? actualEndDate : startDate,
         range: isRange,
         outputFormats
       };
